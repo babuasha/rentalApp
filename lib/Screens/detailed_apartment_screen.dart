@@ -70,6 +70,7 @@ class _ApartmentDetailScreenState extends State<ApartmentDetailScreen> {
     final String currentStatus = (data['status'] ?? 'Available').toString();
     final dynamic toDate = data['toDate'];
 
+    // Only auto-update status to Available if it was explicitly Rented and the agreement expired
     if (currentStatus.toLowerCase() == 'rented' && _isExpired(toDate)) {
       await FirebaseFirestore.instance
           .collection('apartments')
@@ -246,6 +247,7 @@ class _ApartmentDetailScreenState extends State<ApartmentDetailScreen> {
 
         final String title = data['title'] ?? 'Apartment Name';
         final dynamic price = data['price'] ?? 0;
+        final dynamic serviceCharge = data['serviceCharge'] ?? 0;
         final String currency = data['currency'] ?? 'OMR';
         final String bhk = data['bhk'] ?? '2BHK';
         final String type = data['type'] ?? 'Semi';
@@ -255,8 +257,35 @@ class _ApartmentDetailScreenState extends State<ApartmentDetailScreen> {
 
         final bool expired = _isExpired(data['toDate']);
         final String rawStatus = (data['status'] ?? 'Available').toString();
-        final String status = expired ? 'Available' : rawStatus;
-        final bool isRented = status.toLowerCase() == 'rented';
+        
+        // Determine status and styling accurately for all 4 states
+        final String statusLower = rawStatus.toLowerCase().replaceAll(' ', '');
+        
+        String displayStatus = rawStatus.isEmpty ? 'Available' : rawStatus;
+        Color statusBgColor = const Color(0xFFE2F0E7);
+        Color statusTextColor = const Color(0xFF0D6338);
+
+        if (expired && statusLower == 'rented') {
+          displayStatus = 'Available';
+          statusBgColor = const Color(0xFFE2F0E7);
+          statusTextColor = const Color(0xFF0D6338);
+        } else if (statusLower == 'rented') {
+          displayStatus = 'Rented';
+          statusBgColor = const Color(0xFFFFECEB);
+          statusTextColor = const Color(0xFFD9534F);
+        } else if (statusLower == 'ownuse') {
+          displayStatus = 'Own Use';
+          statusBgColor = const Color(0xFFE3F2FD);
+          statusTextColor = const Color(0xFF1976D2);
+        } else if (statusLower == 'underconstruction') {
+          displayStatus = 'Under Construction';
+          statusBgColor = const Color(0xFFFFF3E0);
+          statusTextColor = const Color(0xFFF57C00);
+        } else {
+          displayStatus = 'Available';
+          statusBgColor = const Color(0xFFE2F0E7);
+          statusTextColor = const Color(0xFF0D6338);
+        }
 
         final List<String> photoUrls = _imageHelper.getPhotoUrls(data);
         const String defaultWebUrl = 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80';
@@ -280,7 +309,6 @@ class _ApartmentDetailScreenState extends State<ApartmentDetailScreen> {
           });
         }
 
-        // Get the width of the screen so each image in the ListView takes up the full width
         final screenWidth = MediaQuery.of(context).size.width;
 
         return Scaffold(
@@ -375,7 +403,7 @@ class _ApartmentDetailScreenState extends State<ApartmentDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (expired) ...[
+                      if (expired && statusLower == 'rented') ...[
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
@@ -474,6 +502,16 @@ class _ApartmentDetailScreenState extends State<ApartmentDetailScreen> {
                           color: Color(0xFF0D6338),
                         ),
                       ),
+                      const SizedBox(height: 8),
+
+                      Text(
+                        'Service Charge: $currency $serviceCharge',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black54,
+                        ),
+                      ),
                       const SizedBox(height: 16),
 
                       Wrap(
@@ -491,15 +529,15 @@ class _ApartmentDetailScreenState extends State<ApartmentDetailScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                         decoration: BoxDecoration(
-                          color: isRented ? const Color(0xFFFFECEB) : const Color(0xFFE2F0E7),
+                          color: statusBgColor,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          isRented ? 'Rented' : 'Available',
+                          displayStatus,
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
-                            color: isRented ? const Color(0xFFD9534F) : const Color(0xFF0D6338),
+                            color: statusTextColor,
                           ),
                         ),
                       ),

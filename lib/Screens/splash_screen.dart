@@ -103,7 +103,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Powered by a3sApps',
+                  'Powered by A3S Apps',
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.grey.shade400,

@@ -238,7 +238,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             bottom: 8,
             right: 12,
             child: Text(
-              'Powered by a3sApps',
+              'Powered by A3S Apps',
               style: TextStyle(
                 fontSize: 10,
                 color: Colors.grey.shade400,

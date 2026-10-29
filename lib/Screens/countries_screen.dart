@@ -161,7 +161,7 @@ class CountriesScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  '$apartmentCount Apartments',
+                                  '$apartmentCount ${apartmentCount == 1 ? 'Apartment' : 'Apartments'}',
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: Colors.grey.shade600,

@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:rentalapp/Screens/FilteredApartmentsScreen.dart';
 import 'package:rentalapp/Screens/countries_screen.dart';
 import 'package:rentalapp/helper/currency_helper.dart';
+import 'package:rentalapp/Screens/login_screen.dart'; 
 
- import 'package:rentalapp/Screens/login_screen.dart'; 
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -15,7 +16,6 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  int _selectedIndex = 0;
   String _userName = 'Loading...';
 
   // Instantiate the Helper class
@@ -85,13 +85,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return dateValue?.toString() ?? 'N/A';
   }
 
-  // Check if date falls in current month and year
-  bool _isCurrentMonth(dynamic dateValue) {
+  // Check if date falls within the next 90 days from today
+  bool _isExpiringWithin90Days(dynamic dateValue) {
     final DateTime? toDate = _parseDateTime(dateValue);
     if (toDate == null) return false;
 
     final DateTime now = DateTime.now();
-    return toDate.month == now.month && toDate.year == now.year;
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime checkDate = DateTime(toDate.year, toDate.month, toDate.day);
+
+    // 90 days from today
+    final DateTime ninetyDaysLater = today.add(const Duration(days: 90));
+
+    // True if expiry date is on/after today and on/before 90 days later
+    return (checkDate.isAfter(today) || checkDate.isAtSameMomentAs(today)) &&
+        (checkDate.isBefore(ninetyDaysLater) || checkDate.isAtSameMomentAs(ninetyDaysLater));
   }
 
   // Helper to generate list of last 13 months
@@ -163,7 +171,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return 0.0;
   }
 
-  // Show Dialog listing all expiring apartment agreements
+  // Show Dialog listing all expiring apartment agreements within 90 days
   void _showExpiringDialog(
       BuildContext context, List<QueryDocumentSnapshot> expiringDocs) {
     showDialog(
@@ -176,14 +184,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: const [
               Icon(Icons.warning_amber_rounded, color: Colors.red),
               SizedBox(width: 8),
-              Text(
-                'Expiring Agreements',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              Expanded(
+                child: Text(
+                  'Expiring Agreements (90 Days)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
           content: expiringDocs.isEmpty
-              ? const Text('No agreements are expiring this month.')
+              ? const Text('No agreements are expiring within the next 90 days.')
               : SizedBox(
                   width: double.maxFinite,
                   child: ListView.separated(
@@ -208,7 +219,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                            '$bhk\nAgreement expiring on $formattedToDate in this month.'),
+                            '$bhk\nAgreement expiring on $formattedToDate.'),
                         isThreeLine: true,
                       );
                     },
@@ -231,7 +242,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
-      // --- ADDED THE SLIDING BAR (DRAWER) HERE ---
       drawer: AppDrawer(userName: _userName), 
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot>(
@@ -249,6 +259,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             Map<String, Map<String, double>> countryMonthlyEstimatedRent = {};
             Map<String, Map<String, double>> countryMonthlyCollectedRent = {};
+            
+            Map<String, double> countryTotalServiceCharge = {};
 
             if (snapshot.hasData) {
               final docs = snapshot.data!.docs;
@@ -264,6 +276,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                 countryMonthlyEstimatedRent.putIfAbsent(country, () => {});
                 countryMonthlyCollectedRent.putIfAbsent(country, () => {});
+                countryTotalServiceCharge.putIfAbsent(country, () => 0.0);
               }
 
               for (var doc in docs) {
@@ -282,7 +295,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   availableCount++;
                 }
 
-                if (_isCurrentMonth(data['toDate'])) {
+                if (_isExpiringWithin90Days(data['toDate'])) {
                   expiringDocs.add(doc);
                 }
 
@@ -294,9 +307,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                 final double rawPrice =
                     double.tryParse((data['price'] ?? 0).toString()) ?? 0.0;
+                final double rawServiceCharge =
+                    double.tryParse((data['serviceCharge'] ?? 0).toString()) ?? 0.0;
 
                 final double priceInOMR =
                     _currencyHelper.convertToOMR(rawPrice, country);
+                final double serviceChargeInOMR =
+                    _currencyHelper.convertToOMR(rawServiceCharge, country);
+
+                countryTotalServiceCharge[country] =
+                    (countryTotalServiceCharge[country] ?? 0.0) + serviceChargeInOMR;
+
                 final dynamic paymentType =
                     data['paymentType'] ?? data['paymentFrequency'];
 
@@ -343,7 +364,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     children: [
                       Row(
                         children: [
-                          // --- ADDED MENU BUTTON TO OPEN DRAWER ---
                           Builder(
                             builder: (context) {
                               return IconButton(
@@ -478,48 +498,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Stat Cards (Row 1: Total, Rented, Available)
+                  // Stat Cards (Row 1: Total, Rented, Available) with Navigations
                   Row(
                     children: [
                       _buildStatCard(
                         '$totalApartments',
                         'Total\nApartments',
                         const Color(0xFF2E7D32),
+                        onTap: () => _navigateToFilteredList(context, 'all', 'Total Apartments'),
                       ),
                       const SizedBox(width: 10),
                       _buildStatCard(
                         '$rentedCount',
                         'Rented\n',
                         const Color(0xFF0288D1),
+                        onTap: () => _navigateToFilteredList(context, 'rented', 'Rented'),
                       ),
                       const SizedBox(width: 10),
                       _buildStatCard(
                         '$availableCount',
                         'Available\n',
                         const Color(0xFF8E24AA),
+                        onTap: () => _navigateToFilteredList(context, 'available', 'Available'),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
 
-                  // Stat Cards (Row 2: Own Use, Under Construction)
+                  // Stat Cards (Row 2: Own Use, Under Construction) with Navigations
                   Row(
                     children: [
                       _buildStatCard(
                         '$ownUseCount',
                         'Own Use\n',
                         Colors.blue.shade700,
+                        onTap: () => _navigateToFilteredList(context, 'ownuse', 'Own Use'),
                       ),
                       const SizedBox(width: 10),
                       _buildStatCard(
                         '$underConstructionCount',
                         'Under\nConstruction',
                         Colors.orange.shade800,
+                        onTap: () => _navigateToFilteredList(context, 'under construction', 'Under Construction'),
                       ),
                     ],
                   ),
                   const SizedBox(height: 24),
 
+                  // --- 1. MONTHLY RENTAL INCOME GRAPH ---
                   if (sortedCountries.isEmpty)
                     Container(
                       width: double.infinity,
@@ -530,7 +556,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       child: const Center(
                         child: Text(
-                          'Rent estimation Status\nNo apartment data available.',
+                          'MONTHLY RENTAL INCOME\nNo apartment data available.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: Colors.grey, fontSize: 14),
                         ),
@@ -567,7 +593,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'RENT ESTIMATION STATUS ($country) - OMR',
+                                  'MONTHLY RENTAL INCOME ($country) - OMR',
                                   style: const TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.bold,
@@ -620,7 +646,109 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                   const SizedBox(height: 20),
 
-                  if (sortedCountries.isNotEmpty)
+                  // --- 2. SERVICE CHARGE MONTHLY PAYMENT ---
+                  if (sortedCountries.isEmpty)
+                    const SizedBox.shrink()
+                  else
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16.0),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0F4F1),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'SERVICE CHARGE MONTHLY PAYMENT - OMR',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            height: 210,
+                            child: Builder(
+                              builder: (context) {
+                                double maxServiceCharge = 1.0;
+                                for (var country in sortedCountries) {
+                                  final val = countryTotalServiceCharge[country] ?? 0.0;
+                                  if (val > maxServiceCharge) maxServiceCharge = val;
+                                }
+
+                                return SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: sortedCountries.map((country) {
+                                      final scAmount = countryTotalServiceCharge[country] ?? 0.0;
+                                      final double barHeight = (scAmount / maxServiceCharge) * 110;
+
+                                      return Container(
+                                        width: 65,
+                                        margin: const EdgeInsets.symmetric(horizontal: 3.0),
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              scAmount > 0
+                                                  ? NumberFormat.compact().format(scAmount)
+                                                  : '0',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.black,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Container(
+                                              width: 22,
+                                              height: barHeight <= 0 ? 4 : barHeight,
+                                              decoration: BoxDecoration(
+                                                color: barHeight <= 0
+                                                    ? Colors.grey.shade300
+                                                    : const Color(0xFF6A1B9A),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            SizedBox(
+                                              height: 32,
+                                              child: Text(
+                                                country,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.black87,
+                                                ),
+                                                textAlign: TextAlign.center,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const SizedBox(height: 20),
+
+                  // --- 3. MONTHLY RENT COLLECTION GRAPH ---
+                  if (sortedCountries.isEmpty)
+                    const SizedBox.shrink()
+                  else
                     SizedBox(
                       height: 290,
                       child: ListView.separated(
@@ -651,7 +779,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'RENT COLLECTION STATUS ($country) - OMR',
+                                  'MONTHLY RENT COLLECTION ($country) - OMR',
                                   style: const TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.bold,
@@ -701,73 +829,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         },
                       ),
                     ),
+                  const SizedBox(height: 20),
                 ],
               ),
             );
           },
         ),
       ),
-
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF0D6338),
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.domain),
-            label: 'Apartments',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people_outline),
-            label: 'Tenants',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.more_horiz),
-            label: 'More',
-          ),
-        ],
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+        color: Colors.white,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: const [
+            Text(
+              'Powered by A3S Apps',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildStatCard(String value, String title, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14.0, horizontal: 8.0),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withAlpha(20),
-              blurRadius: 6,
-              spreadRadius: 2,
-            ),
-          ],
+  void _navigateToFilteredList(BuildContext context, String filterType, String headingTitle) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FilteredApartmentsScreen(
+          filterType: filterType,
+          headingTitle: headingTitle,
         ),
-        child: Column(
-          children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: color,
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String value, String title, Color color, {required VoidCallback onTap}) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14.0, horizontal: 8.0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withAlpha(20),
+                blurRadius: 6,
+                spreadRadius: 2,
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
-            ),
-          ],
+            ],
+          ),
+          child: Column(
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -812,17 +947,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// --- UPDATED CLASS FOR THE SLIDE BAR (DRAWER) ---
+// --- APP DRAWER CLASS ---
 class AppDrawer extends StatelessWidget {
   final String userName;
 
   const AppDrawer({super.key, required this.userName});
 
   Future<void> _logout(BuildContext context) async {
-    // Sign out from Firebase
     await FirebaseAuth.instance.signOut();
     
-    // Clear navigation stack and send user to login
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -835,17 +968,15 @@ class AppDrawer extends StatelessWidget {
     return Drawer(
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        // Gives the drawer a modern rounded edge on the right side
         borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
       ),
       child: Column(
         children: [
-          // Modern Custom Drawer Header
           Container(
             padding: const EdgeInsets.only(top: 60, left: 24, bottom: 30),
             width: double.infinity,
             decoration: const BoxDecoration(
-              color: Color(0xFF0D6338), // Matches your app's primary color
+              color: Color(0xFF0D6338),
               borderRadius: BorderRadius.only(
                 bottomRight: Radius.circular(24),
               ),
@@ -887,29 +1018,12 @@ class AppDrawer extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           
-          // Navigation Options
           _buildDrawerItem(
             icon: Icons.dashboard_rounded,
             title: 'Dashboard',
-            onTap: () => Navigator.pop(context), // Already on Dashboard
+            onTap: () => Navigator.pop(context),
             isSelected: true,
           ),
-          // _buildDrawerItem(
-          //   icon: Icons.apartment_rounded,
-          //   title: 'My Properties',
-          //   onTap: () {
-          //     Navigator.pop(context);
-          //     // TODO: Add navigation to CountriesScreen or Properties
-          //   },
-          // ),
-          // _buildDrawerItem(
-          //   icon: Icons.people_outline_rounded,
-          //   title: 'Tenants',
-          //   onTap: () {
-          //     Navigator.pop(context);
-          //     // TODO: Add navigation to Tenants
-          //   },
-          // ),
           _buildDrawerItem(
             icon: Icons.settings_outlined,
             title: 'Settings',
@@ -921,14 +1035,13 @@ class AppDrawer extends StatelessWidget {
           const Spacer(),
           const Divider(indent: 24, endIndent: 24),
           
-          // Styled Logout Button at the bottom
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
             child: ListTile(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              tileColor: Colors.red.shade50, // Subtle red background for danger action
+              tileColor: Colors.red.shade50,
               leading: const Icon(Icons.logout_rounded, color: Colors.red),
               title: const Text(
                 'Logout',
@@ -946,7 +1059,6 @@ class AppDrawer extends StatelessWidget {
     );
   }
 
-  // Helper widget to keep drawer items consistent and clean
   Widget _buildDrawerItem({
     required IconData icon,
     required String title,
@@ -959,7 +1071,6 @@ class AppDrawer extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
-        // Highlights the background if it's the currently selected screen
         tileColor: isSelected ? const Color(0xFF0D6338).withOpacity(0.1) : Colors.transparent,
         leading: Icon(
           icon,
@@ -978,4 +1089,3 @@ class AppDrawer extends StatelessWidget {
     );
   }
 }
-  

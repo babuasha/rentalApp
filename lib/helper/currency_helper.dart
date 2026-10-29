@@ -15,8 +15,8 @@ class CurrencyHelper {
     'INR': 217.39,
     'THB': 88.50,
     'TRY': 127.95,
-    'XCD': 7.03
-    
+    'XCD': 7.03, // St. Kitts & Nevis East Caribbean Dollar
+    'LBP': 234000.0 // Lebanon Lebanese Pound fallback
   };
 
   Map<String, double> get exchangeRates => _exchangeRates;
@@ -48,7 +48,7 @@ class CurrencyHelper {
     final key = countryOrCurrency.toUpperCase().trim();
 
     if (key.contains('OMAN') || key.contains('OMR')) return 'OMR';
-    if (key.contains('UAE') || key.contains('AED') || key.contains('DUBAI')) return 'AED';
+    if (key.contains('UAE') || key.contains('AED') || key.contains('DUBAI') || key.contains('UNITED ARAB EMIRATES') || key.contains('UNITED ARAB')) return 'AED';
     if (key.contains('USA') || key.contains('USD') || key.contains('DOLLAR')) return 'USD';
     if (key.contains('SAUDI') || key.contains('SAR')) return 'SAR';
     if (key.contains('KUWAIT') || key.contains('KWD')) return 'KWD';
@@ -58,7 +58,11 @@ class CurrencyHelper {
     if (key.contains('INDIA') || key.contains('INR')) return 'INR';
     if (key.contains('THAILAND') || key.contains('THB')) return 'THB';
     if (key.contains('TURKEY') || key.contains('TRY')) return 'TRY';
-    if (key.contains('ST.KITTS') || key.contains('XCD')) return 'XCD';
+    
+    // Added explicit match conditions for St. Kitts & Lebanon
+    if (key.contains('ST. KITTS') || key.contains('ST KITTS') || key.contains('KITTS') || key.contains('XCD')) return 'XCD';
+    if (key.contains('LEBANON') || key.contains('LEBANESE') || key.contains('LBP')) return 'LBP';
+
     if (key.length == 3) return key;
 
     return 'OMR';

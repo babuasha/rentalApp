@@ -29,8 +29,9 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
 
   final _nameController = TextEditingController();
   final _rentController = TextEditingController();
+  final _serviceChargeController = TextEditingController();
   final _tenantNameController = TextEditingController();
-  final _sizeController = TextEditingController(); // Added size controller
+  final _sizeController = TextEditingController();
 
   String? _selectedCountryId;
   String? _selectedCountryName;
@@ -44,7 +45,6 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
 
   bool _isLoading = false;
 
-  // Updated to include 5 photos
   File? _photo1;
   File? _photo2;
   File? _photo3;
@@ -114,14 +114,18 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
     'Thailand': 'THB',
     'Turkey': 'TRY',
     'St. Kitts': 'XCD',
+    'Lebanon': 'LBP',
   };
 
-  // Updated to support 5 photos
   Future<void> _pickPhoto(int photoIndex) async {
     final File? pickedImage =
         await _imagePickerHelper.pickImageFromGallery(context);
     if (pickedImage != null) {
       setState(() {
+        if (_uploadedPhotos.length >= photoIndex) {
+          _uploadedPhotos[photoIndex - 1] = '';
+        }
+
         if (photoIndex == 1) {
           _photo1 = pickedImage;
         } else if (photoIndex == 2) {
@@ -146,7 +150,6 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
     }
   }
 
-  // Updated to support 5 photos
   void _removePhoto(int photoIndex) {
     setState(() {
       if (photoIndex == 1) {
@@ -160,15 +163,49 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
       } else if (photoIndex == 5) {
         _photo5 = null;
       }
+
+      if (_uploadedPhotos.length >= photoIndex) {
+        _uploadedPhotos[photoIndex - 1] = '';
+      }
     });
+  }
+
+  // Confirmation dialog when long-pressing a photo icon
+  void _confirmDeletePhoto(int photoIndex) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Photo'),
+          content: const Text('Do you want to delete this photo?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _removePhoto(photoIndex);
+              },
+              child: const Text('Yes', style: TextStyle(color: Color(0xFF0D6338))),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   String _getCurrencyCode(String? countryName, Map<String, dynamic>? countryData) {
     if (countryData != null && countryData['currency'] != null) {
       return countryData['currency'].toString();
     }
-    if (countryName != null && _countryCurrencyMap.containsKey(countryName)) {
-      return _countryCurrencyMap[countryName]!;
+    if (countryName != null) {
+      for (var entry in _countryCurrencyMap.entries) {
+        if (entry.key.toLowerCase() == countryName.toLowerCase()) {
+          return entry.value;
+        }
+      }
     }
     return 'OMR';
   }
@@ -187,17 +224,25 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
     super.initState();
     _selectedCountryId = widget.initialCountryId;
     _selectedCountryName = widget.initialCountryName;
-    _currency = _getCurrencyCode(_selectedCountryName, null);
 
     if (_isEditing && widget.apartmentData != null) {
       final data = widget.apartmentData!;
       _nameController.text = data['title'] ?? '';
       _rentController.text = (data['price'] ?? '').toString();
+      _serviceChargeController.text = (data['serviceCharge'] ?? '').toString();
       _tenantNameController.text = data['tenantName'] ?? '';
-      _sizeController.text = data['size'] ?? ''; // Load size if editing
+      _sizeController.text = data['size'] ?? '';
       _selectedCountryId = data['countryId'] ?? widget.initialCountryId;
       _selectedCountryName = data['countryName'] ?? widget.initialCountryName;
-      _currency = data['currency'] ?? _getCurrencyCode(_selectedCountryName, null);
+      
+      final derivedCurrency = _getCurrencyCode(_selectedCountryName, null);
+      if (derivedCurrency != 'OMR') {
+        _currency = derivedCurrency;
+      } else {
+        final savedCurrency = data['currency']?.toString();
+        _currency = (savedCurrency != null && savedCurrency.isNotEmpty) ? savedCurrency : 'OMR';
+      }
+
       _paymentType = data['paymentType'];
       _apartmentType = data['bhk'];
       _furnished = data['type'];
@@ -216,6 +261,8 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
       if (data['documents'] is Map) {
         _uploadedDocuments.addAll(Map<String, String>.from(data['documents']));
       }
+    } else {
+      _currency = _getCurrencyCode(_selectedCountryName, null);
     }
   }
 
@@ -223,8 +270,9 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
   void dispose() {
     _nameController.dispose();
     _rentController.dispose();
+    _serviceChargeController.dispose();
     _tenantNameController.dispose();
-    _sizeController.dispose(); // Dispose size controller
+    _sizeController.dispose();
     super.dispose();
   }
 
@@ -278,39 +326,39 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
 
       final List<String> finalPhotoUrls = [];
       
-      // Updated upload logic to handle all 5 photos
       if (_photo1 != null) {
         final url1 = await _storageHelper.uploadPhoto(_photo1!, targetId, 1);
         finalPhotoUrls.add(url1);
+      } else if (_uploadedPhotos.length >= 1 && _uploadedPhotos[0].isNotEmpty) {
+        finalPhotoUrls.add(_uploadedPhotos[0]);
       }
+
       if (_photo2 != null) {
         final url2 = await _storageHelper.uploadPhoto(_photo2!, targetId, 2);
         finalPhotoUrls.add(url2);
+      } else if (_uploadedPhotos.length >= 2 && _uploadedPhotos[1].isNotEmpty) {
+        finalPhotoUrls.add(_uploadedPhotos[1]);
       }
+
       if (_photo3 != null) {
         final url3 = await _storageHelper.uploadPhoto(_photo3!, targetId, 3);
         finalPhotoUrls.add(url3);
+      } else if (_uploadedPhotos.length >= 3 && _uploadedPhotos[2].isNotEmpty) {
+        finalPhotoUrls.add(_uploadedPhotos[2]);
       }
+
       if (_photo4 != null) {
         final url4 = await _storageHelper.uploadPhoto(_photo4!, targetId, 4);
         finalPhotoUrls.add(url4);
+      } else if (_uploadedPhotos.length >= 4 && _uploadedPhotos[3].isNotEmpty) {
+        finalPhotoUrls.add(_uploadedPhotos[3]);
       }
+
       if (_photo5 != null) {
         final url5 = await _storageHelper.uploadPhoto(_photo5!, targetId, 5);
         finalPhotoUrls.add(url5);
-      }
-      
-      // Keep existing photo URLs if any (mostly relevant when editing)
-      if (finalPhotoUrls.isEmpty && _uploadedPhotos.isNotEmpty) {
-        finalPhotoUrls.addAll(_uploadedPhotos);
-      } else if (_uploadedPhotos.isNotEmpty) {
-        // If updating photos during edit, this ensures old photos that weren't replaced are kept
-        // (You can adjust this specific logic depending on how you want edit replacement to behave)
-        for(var url in _uploadedPhotos) {
-           if (!finalPhotoUrls.contains(url)) {
-              finalPhotoUrls.add(url);
-           }
-        }
+      } else if (_uploadedPhotos.length >= 5 && _uploadedPhotos[4].isNotEmpty) {
+        finalPhotoUrls.add(_uploadedPhotos[4]);
       }
 
       final Map<String, String> finalDocumentUrls = {};
@@ -330,13 +378,14 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
         'countryId': _selectedCountryId,
         'countryName': _selectedCountryName,
         'title': _nameController.text.trim(),
-        'size': _sizeController.text.trim(), // Added size to payload
+        'size': _sizeController.text.trim(),
         'fromDate': _fromDate != null ? Timestamp.fromDate(_fromDate!) : null,
         'toDate': _toDate != null ? Timestamp.fromDate(_toDate!) : null,
         'paymentType': _paymentType,
         'bhk': _apartmentType,
         'type': _furnished,
         'price': double.tryParse(_rentController.text.trim()) ?? 0,
+        'serviceCharge': double.tryParse(_serviceChargeController.text.trim()) ?? 0,
         'currency': _currency,
         'status': _status,
         'tenantName': _tenantNameController.text.trim(),
@@ -553,7 +602,6 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Added Apartment Size Field
                     _buildLabel('Apartment Size'),
                     TextFormField(
                       controller: _sizeController,
@@ -582,7 +630,14 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Updated Status Selector with 4 options
+                    _buildLabel('Service Charge ($_currencyDisplaySymbol)'),
+                    TextFormField(
+                      controller: _serviceChargeController,
+                      keyboardType: TextInputType.number,
+                      decoration: _inputDecoration(hintText: 'Enter service charge'),
+                    ),
+                    const SizedBox(height: 16),
+
                     _buildLabel('Status'),
                     Column(
                       children: [
@@ -612,7 +667,6 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // Updated UI logic to handle 5 photos and prevent overflow
                     _buildLabel('Upload Photos :-'),
                     const SizedBox(height: 8),
                     Wrap(
@@ -691,11 +745,17 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
   Widget _buildPhotoBox(int photoIndex, File? imageFile) {
     String? existingUrl;
     if (imageFile == null && _uploadedPhotos.length >= photoIndex) {
-      existingUrl = _uploadedPhotos[photoIndex - 1];
+      final url = _uploadedPhotos[photoIndex - 1];
+      if (url.isNotEmpty) {
+        existingUrl = url;
+      }
     }
+
+    final bool hasImage = imageFile != null || existingUrl != null;
 
     return GestureDetector(
       onTap: () => _pickPhoto(photoIndex),
+      onLongPress: hasImage ? () => _confirmDeletePhoto(photoIndex) : null,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -718,7 +778,7 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
                         )
                       : null),
             ),
-            child: (imageFile == null && existingUrl == null)
+            child: !hasImage
                 ? Icon(
                     Icons.add_a_photo_outlined,
                     color: Colors.grey.shade600,
@@ -726,7 +786,7 @@ class _AddApartmentScreenState extends State<AddApartmentScreen> {
                   )
                 : null,
           ),
-          if (imageFile != null || existingUrl != null)
+          if (hasImage)
             Positioned(
               top: -6,
               right: -6,

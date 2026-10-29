@@ -227,7 +227,7 @@ class _LoginScreenState extends State<LoginScreen> {
             bottom: 20,
             right: 20,
             child: Text(
-              'Powered by a3sApps',
+              'Powered by A3S Apps',
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.grey.shade400,
